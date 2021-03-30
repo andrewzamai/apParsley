@@ -7,7 +7,7 @@
 #include <iostream>
 #include <string>
 
-#include "myLib.hpp" // my library of functions
+#include "parsleyLib.hpp" // my library of functions
 
 using namespace std;
 using namespace cv;
@@ -15,13 +15,22 @@ using namespace cv;
 
 int main()
 {
-    cout << "Welcome, to start specify the path to the image you wish to process: " << endl;
     // FilePath to the image I wish to process
-    string imgPath = "";
-    cin >> imgPath;
-    // some example paths
-    //imgPath = "/Users/andrew/Desktop/Università/Laurea/ProgettoPrezzemolo/FotoPrezzemolo0903/2_Layout/Mono/IMG_9444.jpg";
-    //imgPath = "/Users/andrew/Desktop/Università/Laurea/ProgettoPrezzemolo/FotoPrezzemolo0903/5_Layout/Mono/IMG_0197.jpg";
+    string path0 = "/Users/andrew/Desktop/Università/Laurea/ProgettoPrezzemolo/FotoPrezzemolo0903/1_Layout/Mono/IMG_9234.jpg";
+    string path1 = "/Users/andrew/Desktop/Università/Laurea/ProgettoPrezzemolo/FotoPrezzemolo0903/2_Layout/Mono/IMG_9444.jpg";
+    string path2 = "/Users/andrew/Desktop/Università/Laurea/ProgettoPrezzemolo/FotoPrezzemolo0903/4_Layout/Mono/IMG_0041.jpg";
+    string path3 = "/Users/andrew/Desktop/Università/Laurea/ProgettoPrezzemolo/FotoPrezzemolo0903/4_Layout/Mono/IMG_0011.jpg";
+    string path4 = "/Users/andrew/Desktop/Università/Laurea/ProgettoPrezzemolo/FotoPrezzemolo0903/4_Layout/Mono/IMG_0101.jpg";
+    string path5 = "/Users/andrew/Desktop/Università/Laurea/ProgettoPrezzemolo/FotoPrezzemolo0903/5_Layout/Mono/IMG_0197.jpg";
+    
+    string paths[] = {path0, path1, path2, path3, path4, path5};
+    
+    cout << "Welcome, to start digit a number from 0 to 5 corresponding to a path to an image you wish to process: " << endl;
+    int selection = 0;
+    cin >> selection;
+    
+    string imgPath = paths[selection];
+    
     
     // a vector for saving all produced images
     vector<Mat> processedImages;
@@ -54,8 +63,9 @@ int main()
     
     // Computes the image histogram and displays it in a new window
     Mat imgHistogram;
-    myLib::calculateCV_8UHistogram(img, imgHistogram);
+    parsleyLib::calculateCV_8UHistogram(img, imgHistogram);
     imshow("Original image histogram: ", imgHistogram);
+    processedImages.push_back(imgHistogram);
     
     
     // Applies gamma correction to the image, the program promps the user to specify manually the gamma value
@@ -63,6 +73,7 @@ int main()
     string user = "";
     double gamma = 0.0; // needs to be a double, a value between 1.0 and 3.0 is recommended
     Mat gammaImage;
+    Mat gammaImgHist; // image where to display histogram
     
     do{
         cout << "Specify a gamma value for gamma correction (a value between 1.0 and 3.0 is recommended): " << endl;
@@ -70,12 +81,12 @@ int main()
         
         // Applies gamma correction to the image
         gammaImage = img.clone(); // cloning the image can require computational time, however not doing so will cause the program in this loop to apply a new gamma correction on an alredy gamma corrected image
-        myLib::applyGammaCorrection(gammaImage, gamma); //gamma value is chosen after some sperimental attempts
+        parsleyLib::applyGammaCorrection(gammaImage, gamma); //gamma value is chosen after some sperimental attempts
         imshow("Image after Gamma Correction: ", gammaImage);
         
         // Computes new histogram after gamma correction
-        Mat gammaImgHist;
-        myLib::calculateCV_8UHistogram(gammaImage, gammaImgHist);
+        
+        parsleyLib::calculateCV_8UHistogram(gammaImage, gammaImgHist);
         imshow("New Histogram on Gamma Corrected img: ", gammaImgHist);
         
         waitKey(1);
@@ -89,35 +100,34 @@ int main()
     
     // added to processed images
     processedImages.push_back(gammaImage);
+    processedImages.push_back(gammaImgHist);
     
+
     // Applies thresholding to get a Binary Image
-    repeat = true;
-    user.clear();
-    double thresholdingValue = 0.0;
+    double thresholdingValue = parsleyLib::getAdaptiveThreshValue(gammaImage);
     Mat binaryImage;
     
-    do{
-        cout << "Specify a thresholding value: " << endl;
-        cin >> thresholdingValue;
-        
-        binaryImage = gammaImage.clone();
-        myLib::toBinaryImage(binaryImage, thresholdingValue);
-        imshow("Binary Image: ", binaryImage);
-        
-        waitKey(1);
-        
-        cout << "Proceed? ( 'y' for yes, 'r' for repeat) " << endl;
-        cin >> user;
-        if(user.compare("y") == 0)
-            repeat = false;
-        
-    } while(repeat);
+    binaryImage = gammaImage.clone();
     
+    // draws a thresholding vertical line on gammaImgHist at the calculated thresholdingValue by parsleyLib::getAdaptiveThreshValue // for debugging purposes
+    int col = static_cast<int>(thresholdingValue*gammaImgHist.cols/256); // scales the thresholding value to the window size
+    line(gammaImgHist, Point(col, 0), Point(col, gammaImgHist.rows-1), Scalar(255), 2, LINE_8, 0); // is not possible to draw a colored line on a CV_8U image
+    imshow("Thresholding value line on gamma img hist: ", gammaImgHist);
+    processedImages.push_back(gammaImgHist);
+    
+    parsleyLib::toBinaryImage(binaryImage, thresholdingValue);
+    imshow("Binary Image: ", binaryImage);
+    
+    waitKey(1);
+        
     // added to processed images
     processedImages.push_back(binaryImage);
     
+    
+// Blob detector and rotated bounding boxes step
+    
     // The following code is needed in order to create an istance of a SimpleBlobDetector
-    SimpleBlobDetector::Params parameters = myLib::instantiateBlobParams(); // only one instance is needed
+    SimpleBlobDetector::Params parameters = parsleyLib::instantiateBlobParams(); // only one instance is needed
     float minArea = 250; // default value
     Ptr<SimpleBlobDetector> blobDetector;
     
@@ -132,11 +142,11 @@ int main()
         cout << "Specify a minimum Area for the object to be detected: " << endl;
         cin >> minArea;
         
-        blobDetector = myLib::getBlobDetectorInstance(&parameters, minArea); // it is possible to change minArea filtering parameter at run time simply by calling getBlobDetectorInstance
+        blobDetector = parsleyLib::getBlobDetectorInstance(&parameters, minArea); // it is possible to change minArea filtering parameter at run time simply by calling getBlobDetectorInstance
         
         imgWithBoundingBoxes = imread(imgPath, IMREAD_COLOR); // to draw bounding boxes on the original image (to use different colors it needs to be read in IMREAD_COLOR MODE)
         
-        keypoints = myLib::boundingBlobDetect(blobDetector, binaryImage, imgWithKeypoints, imgWithBoundingBoxes);
+        keypoints = parsleyLib::boundingBlobDetect(blobDetector, binaryImage, imgWithKeypoints, imgWithBoundingBoxes);
         
         cout << "Number of detected objects: " << keypoints.size() << endl;
         
