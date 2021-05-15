@@ -4,13 +4,13 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/features2d.hpp>
 
-#include "myLib.hpp"
+#include "parsleyLib.hpp"
 #include <iostream>
 
 using namespace std;
 using namespace cv;
 
-namespace myLib {
+namespace parsleyLib {
 
 
 void calculateCV_8UHistogram(const Mat& image, Mat& imageToDisplayWhere)
@@ -28,10 +28,10 @@ void calculateCV_8UHistogram(const Mat& image, Mat& imageToDisplayWhere)
     calcHist(&image, 1, 0, Mat(), imgDataHist, 1, &histSize, &histRange, uniform, accumulate);
     
     // creates new Mat type image in which to display the hist given the calculated imgDataHist
-    int histHeight = 512;
-    int histWidth = 512;
+    int histHeight = 3024;
+    int histWidth = 3024;
     int binWidth = cvRound( (double) histWidth/histSize); // each bin width
-    Mat histImageToDisplay(histHeight, histWidth, CV_8U, Scalar(0));
+    Mat histImageToDisplay(histHeight, histWidth, CV_8U, Scalar(255));
     
     // normalizes histogram to fit into histImageToDisplay
     normalize(imgDataHist, imgDataHist, 0, histImageToDisplay.rows, NORM_MINMAX, -1, Mat());
@@ -41,7 +41,8 @@ void calculateCV_8UHistogram(const Mat& image, Mat& imageToDisplayWhere)
         {
             line(histImageToDisplay, Point( binWidth*(i-1), histHeight - cvRound(imgDataHist.at<float>(i-1))),
                   Point(binWidth*(i), histHeight - cvRound(imgDataHist.at<float>(i))),
-                  Scalar(255, 0, 0), 2, LINE_8, 0);
+                  Scalar(0, 0, 0), 3, LINE_8, 0);
+            //cout << " Value " << i-1 << ": " << cvRound(imgDataHist.at<float>(i-1)) << endl;
         }
     
     imageToDisplayWhere = histImageToDisplay; // uses Mat class assigment operator
@@ -76,14 +77,14 @@ SimpleBlobDetector::Params instantiateBlobParams()
 {
     SimpleBlobDetector::Params parameters = SimpleBlobDetector::Params();
     
-    parameters.filterByColor = 1;
+    parameters.filterByColor = true;
     parameters.blobColor = 255;
     parameters.minDistBetweenBlobs = 1;
-    parameters.minThreshold = 0;
+    parameters.minThreshold = 1;
     parameters.maxThreshold = 255;
     
     parameters.filterByArea = true;
-    parameters.minArea = 150;       // DA SETTARE MAGARI CON TRACKBAR
+    parameters.minArea = 1000;       // DA CALCOLARE IN RELAZIONE ALLA DISTANZA DALL'OBIETTIVO
     parameters.maxArea = 500000;
     
     parameters.filterByCircularity = false;
@@ -120,7 +121,7 @@ vector<KeyPoint> boundingBlobDetect(Ptr<SimpleBlobDetector> blobDetector, Mat& b
     blobDetector -> detect(binaryImage, keypoints);
     // draws red circles on detected keypoints
     drawKeypoints(binaryImage, keypoints, imgWithKeypoints, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-    
+        
     // Uses cv::findContours method applied to the Binary Image, to locate all patches of white pixels
     vector<vector<Point>> contoursSet; // a vector of patches, eatch patch of points it's in turn described by a vector of Point
     findContours(binaryImage, contoursSet, RETR_EXTERNAL, CHAIN_APPROX_NONE); // RETR_EXTERNAL to reject inner contours
@@ -132,18 +133,100 @@ vector<KeyPoint> boundingBlobDetect(Ptr<SimpleBlobDetector> blobDetector, Mat& b
         boundingRects[i] = minAreaRect(contoursSet[i]);
     }
     
-    vector<RotatedRect> boundingRectsCopy(boundingRects); // clones boundingRects vector before vector difference
-    helpFun::eliminateBlobDetectedRect(keypoints, boundingRectsCopy); // vectors of non blob detected bounding rectangles
-    helpFun::vectorsDifference(boundingRects, boundingRectsCopy); // vectors of only blob detected bounding rectangles
     
-    helpFun::drawRotatedBoundingBoxes(imgWithBoundingBoxes, boundingRects);
-
+    vector<RotatedRect> boundingRectsCopy(boundingRects); // clones boundingRects vector before vector difference
+    eliminateBlobDetectedRect(keypoints, boundingRectsCopy); // vectors of non blob detected bounding rectangles
+    vectorsDifference(boundingRects, boundingRectsCopy); // vectors of only blob detected bounding rectangles
+    
+    drawRotatedBoundingBoxes(imgWithBoundingBoxes, boundingRects);
+    
+    //cout << "Total number of bounded pixels: " << totalPixels(boundingRects) << endl;
+    
     return keypoints;
 }
 
-// dividere con commento
 
-namespace helpFun { // da mettere in altro file
+
+
+
+/*------------------------------------------- Helper functions below: --------------------------------------------------*/
+
+
+
+
+
+double getAdaptiveThreshValue(const cv::Mat& image)
+{
+    const int histSize = 256; // being an 8 bit image there will be 256 intensities of gray
+    
+    float range[] = {0, 256}; // array of float to specify x-axis values
+    const float* histRange = {range}; // array of pointers, cause cv::calcHist need a double pointer param
+    
+    bool uniform = true; // bins (columns) to have all same width
+    bool accumulate = false; // to clear all data from previous histograms
+    
+    // calling cv::calcHist static function with the above specified parameters
+    Mat imgDataHist;
+    calcHist(&image, 1, 0, Mat(), imgDataHist, 1, &histSize, &histRange, uniform, accumulate);
+    
+    // each element of the vector will represent the number of pixel of intensity same as the element position i
+    MatIterator_<float> it, end;
+    vector<float> intensities; // cv::calcHist fills a Mat object of float elements
+    for( it=imgDataHist.begin<float>(), end=imgDataHist.end<float>(); it != end; ++it)
+    {
+        intensities.push_back(*it);
+    }
+    
+    // Prints intensity values // Just for debugging purposes
+    /*
+    cout << "Number of intensities: " << intensities.size() << endl;
+    cout << "List of all intensities: " << endl;
+    for(int i=0; i<intensities.size(); ++i)
+    {
+        cout << intensities.at(i) << endl;
+    }
+    */
+    double y2 = 0.0;
+    double y1 = 0.0;
+    double m = 0.0; // slope
+    // max slope over which the algotithm ends, returning the thresholding value equal to the i position reached
+    // experimental value founded by analyzing histograms of some gamma corrected images, seeing that all hists present this thresholding slope where impurities intensities end and parsley/background intensities start
+    double thresholdingSlope = 1000000;
+    int window = 2; // due to the gamma image histogram irregolarity, calculates the mean of 2 points instead of 1, to eventually calculate the slope by (y2-y1)/window
+    
+    // i acts as an iterator over the vector, scanning it from right to left, calculating for each iteration the slope of the gamma histogram at that point
+    // y1 represents the mean of the intensities at positions i and i+1    [i to i+window[ if window > 2
+    // y2 represents the mean of the intensities at positions i-1 and i-2   [i-window, i[ if window > 2
+    for(int i=intensities.size()-window; i>window; --i)
+    {
+        y1 = 0.0;
+        for(int j=i; j<i+window; ++j)
+        {
+            y1 += intensities.at(j);
+        }
+        y1 = y1/window; // calculates mean
+        
+        y2 = 0.0;
+        for(int j=i-1; j>i-window; --j)
+        {
+            y2 += intensities.at(j);
+        }
+        y2 = y2/window;
+        
+        m = - ((y2-y1)/window) * 100; // calculates slope in percentage, minus because we are going from right to left (x2 < x1), divided by window as we can assume x2-x1 = window
+        
+        //cout << "Slope: " << m << endl; // Just for debugging purposes
+        
+        // stops after a big slope: impurities are just a small percentage of overall image, yet not negligible. A big positive slope separates a first number of significant pixels (impurities) at its right
+        if(m > thresholdingSlope)
+        {
+            //cout << "Computed Thresholding value: " << i << endl;
+            return i;
+        }
+
+    }
+    return -1;
+}
 
 
 bool pointBelongsToRect(const RotatedRect& rect, Point2f point)
@@ -219,7 +302,7 @@ void drawRotatedBoundingBoxes(Mat& imgToDraw, const vector<RotatedRect>& rotRect
             if(isRect(rotRectangles[i]))
                 line(imgToDraw, rectPoints[j], rectPoints[(j+1)%4], Scalar(0,0,255), 5); // Disegno il rettangolo collegando mediante dei segmenti i punti memorizzati nel vettore rectPoint, ultimo parametro è lo spessore della linea
             else
-                line(imgToDraw, rectPoints[j], rectPoints[(j+1)%4], Scalar(255,0,0), 5);
+                line(imgToDraw, rectPoints[j], rectPoints[(j+1)%4], Scalar(0,0,255), 5);
             
             // cout << "A vertex of rotated rectangle number " << i << " is: " << rectPoints[j] << endl;
             
@@ -229,7 +312,19 @@ void drawRotatedBoundingBoxes(Mat& imgToDraw, const vector<RotatedRect>& rotRect
 }
 
 
+double totalPixels(const vector<RotatedRect>& rotRects)
+{
+    double total = 0;
+    for(int i=0; i<rotRects.size(); ++i)
+    {
+        total = total + rotRects[i].size.area();
+    }
+    return total;
+}
+
+
+
 
 }
 
-}
+

@@ -1,12 +1,12 @@
-#ifndef myLib_hpp
-#define myLib_hpp
+#ifndef parsleyLib_hpp
+#define parsleyLib_hpp
 
 #include <stdio.h>
 #include <opencv2/core.hpp>
 #include <opencv2/features2d.hpp>
 
 
-namespace myLib{
+namespace parsleyLib{
 
 /**
  Computes the passed image histogram and saves the ready to display data in the other image passed.
@@ -48,7 +48,7 @@ cv::SimpleBlobDetector::Params instantiateBlobParams();
  permits to instantiate a Params object with alredy all parameters setted for this specific application (more encapsulation and information hiding),
  permits to instantiate only once a Params object and easily modify its minArea filtering parameter, instead of each time create a completely new Param object.
  
- @param parameters a pointer to an alredy instantiated SimpleBlobDetector::Params object 
+ @param parameters a pointer to an alredy instantiated SimpleBlobDetector::Params object
  @param minArea the new minArea filtering parameter
  @return a smart pointer (the pointed object will automatically cleaned up after the Ptr is destroyed)
  */
@@ -66,7 +66,24 @@ cv::Ptr<cv::SimpleBlobDetector> getBlobDetectorInstance(cv::SimpleBlobDetector::
 std::vector<cv::KeyPoint> boundingBlobDetect(cv::Ptr<cv::SimpleBlobDetector> blobDetector, cv::Mat& binaryImage, cv::Mat& imgWithKeypoints, cv::Mat& imgWithBoundingBoxes);
 
 
-namespace helpFun{
+
+
+
+
+/*------------------------------------------- Helper functions below: --------------------------------------------------*/
+
+
+
+
+
+
+/**
+ Automatically computes a thresholding value on the given image.
+ 
+ Analizes gamma image histogram from right to left, calculating the slope at each point. Stops after a big slope specified in the method implementation.
+ */
+double getAdaptiveThreshValue(const cv::Mat& image);
+
 
 /**
  Checks if a given point belongs to a given rotated rectangle.
@@ -114,8 +131,8 @@ bool isRect(cv::RotatedRect r);
  */
 void drawRotatedBoundingBoxes(cv::Mat& imgToDraw, const std::vector<cv::RotatedRect>& rotRectangles);
 
-}
 
+double totalPixels(const std::vector<cv::RotatedRect>& rotRects);
 
 }
-#endif /* myLib_hpp */
+#endif /* parsleyLib_hpp */
