@@ -1,3 +1,5 @@
+// APParsley: un sistema di visione artificiale per l'individuazione di impurità tra foglie di prezzemolo essiccate
+// Andrew Zamai
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
@@ -11,6 +13,107 @@ using namespace std;
 using namespace cv;
 
 namespace parsleyLib {
+
+void processImage(string inputImgPath, string outputImgPath)
+{
+    // Starts calculating time to have an idea of processing time
+    double ticks = (double) getTickCount();
+    
+    // a vector where to save all processed images
+    vector<Mat> processedImages;
+    // Reads the image and saves it into img, an istance of OpenCV::Mat class
+    Mat img = imread(inputImgPath, IMREAD_GRAYSCALE);
+    
+    // Creates a named window in which to display the loaded image to be further processed
+    //namedWindow("Displaying original image: ", WINDOW_AUTOSIZE);
+    //imshow("Displaying original image: ", img);
+    
+    // adds original image to processed images
+    processedImages.push_back(img);
+    
+    
+    // Computes the image histogram and displays it in a new window
+    Mat imgHistogram;
+    parsleyLib::calculateCV_8UHistogram(img, imgHistogram);
+    //imshow("Original image histogram: ", imgHistogram);
+    processedImages.push_back(imgHistogram);
+    
+    
+    // Applies gamma correction to the image
+    double gamma = 1.5; // needs to be a double, a value between 1.0 and 3.0 is recommended. 1.5 is sperimentally choosen
+    Mat gammaImage = img.clone();
+    parsleyLib::applyGammaCorrection(gammaImage, gamma);
+    //imshow("Image after Gamma Correction: ", img);
+    
+    // Computes new histogram after gamma correction
+    Mat gammaImgHist; // image where to display gamma image histogram
+    parsleyLib::calculateCV_8UHistogram(gammaImage, gammaImgHist);
+    //imshow("New Histogram on Gamma Corrected img: ", gammaImgHist);
+        
+    // adds them to processed images
+    processedImages.push_back(gammaImage);
+    
+    // Applies thresholding to get a Binary Image
+    double thresholdingValue = parsleyLib::getAdaptiveThreshValue(gammaImage);
+    // draws a thresholding vertical line on gammaImgHist at the calculated thresholdingValue by parsleyLib::getAdaptiveThreshValue // for debugging purposes
+    int col = static_cast<int>(thresholdingValue*gammaImgHist.cols/256); // scales the thresholding value to the window size
+    line(gammaImgHist, Point(col, 0), Point(col, gammaImgHist.rows-1), Scalar(0), 2, LINE_8, 0); // is not possible to draw a colored line on a CV_8U image
+    //imshow("Thresholding value line on gamma img hist: ", gammaImgHist);
+    processedImages.push_back(gammaImgHist);
+    
+    Mat binaryImage = gammaImage.clone();
+    parsleyLib::toBinaryImage(binaryImage, thresholdingValue);
+    //imshow("Binary Image: ", img);
+    // adds binary image to processed images
+    processedImages.push_back(binaryImage);
+    
+
+    // Blob detector and rotated bounding boxes steps:
+    
+    // The following code is needed in order to create an istance of a SimpleBlobDetector
+    SimpleBlobDetector::Params parameters = parsleyLib::instantiateBlobParams(); // only one instance is needed
+    float minArea = 1500; // default value
+    Ptr<SimpleBlobDetector> blobDetector;
+    
+    Mat imgWithKeypoints; // no needs for inizialization
+    //Mat imgWithBoundingBoxes = Mat(img.size(), CV_8UC3, Scalar::all(255)); // to draw bounding boxes on a white image
+    Mat imgWithBoundingBoxes;
+    vector<KeyPoint> keypoints;
+    
+    blobDetector = parsleyLib::getBlobDetectorInstance(&parameters, minArea); // it is possible to change minArea filtering parameter at run time simply by calling getBlobDetectorInstance
+    imgWithBoundingBoxes = imread(inputImgPath, IMREAD_COLOR); // to draw bounding boxes on the original image (to use different colors it needs to be read in IMREAD_COLOR MODE)
+    //imgWithBoundingBoxes = binaryImage; // for drawing boxes on binary image
+    //cvtColor(binaryImage, imgWithBoundingBoxes, COLOR_GRAY2BGR);
+        
+    keypoints = parsleyLib::boundingBlobDetect(blobDetector, binaryImage, imgWithKeypoints, imgWithBoundingBoxes);
+        
+    cout << "Number of detected objects for: "  << inputImgPath << ": " << keypoints.size() << endl;
+        
+    //imshow("Img with blob detected keypoints: ", imgWithKeypoints);
+    //imshow("Img showing drawn bounding boxes: ", imgWithBoundingBoxes);
+        
+    // added to processed images
+    processedImages.push_back(imgWithBoundingBoxes);
+    
+    // list of coordinates of all blob detected keypoints
+    vector<Point2f> points2f;
+    KeyPoint::convert(keypoints, points2f);
+    cout << "The detected objects have centers at the following coordinates (pixelCol, pixelRow): " << endl;
+    for(int i=0; i<points2f.size();++i)
+    {
+        cout << "Object " << i << " : (" << (int)points2f[i].x << ", " << (int)points2f[i].y << ")" << endl; // float type values where (x,y) x is number of column, y number of row, from top left corner
+    }
+    
+    string outputPath = outputImgPath + "/processedImages.tiff";
+    imwrite(outputPath, processedImages);
+    
+    
+    // Stops the chrono and shows the elapsed time to process the image
+    double elapsedTime = ((double)getTickCount() - ticks) / getTickFrequency();
+    cout << "Single image execution time: " << elapsedTime << " seconds" << endl;
+    
+    
+}
 
 
 void calculateCV_8UHistogram(const Mat& image, Mat& imageToDisplayWhere)
@@ -84,7 +187,7 @@ SimpleBlobDetector::Params instantiateBlobParams()
     parameters.maxThreshold = 255;
     
     parameters.filterByArea = true;
-    parameters.minArea = 1000;       // DA CALCOLARE IN RELAZIONE ALLA DISTANZA DALL'OBIETTIVO
+    parameters.minArea = 1500;       // 1500 default value
     parameters.maxArea = 500000;
     
     parameters.filterByCircularity = false;
@@ -100,16 +203,7 @@ SimpleBlobDetector::Params instantiateBlobParams()
 
 Ptr<SimpleBlobDetector> getBlobDetectorInstance(SimpleBlobDetector::Params* parameters, float minArea)
 {
-    /* when I pass a reference in the main calling this function it will never be a nullptr!
-    if(parameters == nullptr)
-    {
-        cout << "A null parameters pointer was passed: a new instance of parameters was created!" << endl;
-        *parameters = instantiateBlobParams();
-    }
-    */
-    
     parameters->minArea = minArea;
-    
     return SimpleBlobDetector::create(*parameters);
 }
 
@@ -280,12 +374,10 @@ bool isRect(RotatedRect r)
     
     if(side1 > 2*side2 || side2 > 2*side1)
     {
-        //cout << "true" << endl;
         return true;
     }
     else
     {
-        //cout << "false" << endl;
         return false;
     }
 }
@@ -295,14 +387,14 @@ void drawRotatedBoundingBoxes(Mat& imgToDraw, const vector<RotatedRect>& rotRect
 {
     for(int i=0; i<rotRectangles.size(); ++i)
     {
-        Point2f rectPoints[4]; // Dichiarazione del vettore delle quattro coordinate (x,y) del rettangolo da disegnare
-        rotRectangles[i].points(rectPoints); // Inizializzo il vettore mediante la funzione points applicata al vettore di RotatedRect
+        Point2f rectPoints[4];
+        rotRectangles[i].points(rectPoints);
         for(int j=0; j<4; ++j)
         {
             if(isRect(rotRectangles[i]))
-                line(imgToDraw, rectPoints[j], rectPoints[(j+1)%4], Scalar(0,0,255), 5); // Disegno il rettangolo collegando mediante dei segmenti i punti memorizzati nel vettore rectPoint, ultimo parametro è lo spessore della linea
-            else
                 line(imgToDraw, rectPoints[j], rectPoints[(j+1)%4], Scalar(0,0,255), 5);
+            else
+                line(imgToDraw, rectPoints[j], rectPoints[(j+1)%4], Scalar(255,0,0), 5);
             
             // cout << "A vertex of rotated rectangle number " << i << " is: " << rectPoints[j] << endl;
             
@@ -312,19 +404,5 @@ void drawRotatedBoundingBoxes(Mat& imgToDraw, const vector<RotatedRect>& rotRect
 }
 
 
-double totalPixels(const vector<RotatedRect>& rotRects)
-{
-    double total = 0;
-    for(int i=0; i<rotRects.size(); ++i)
-    {
-        total = total + rotRects[i].size.area();
-    }
-    return total;
-}
-
-
-
 
 }
-
-

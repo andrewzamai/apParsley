@@ -1,3 +1,5 @@
+// APParsley: un sistema di visione artificiale per l'individuazione di impurità tra foglie di prezzemolo essiccate
+// Andrew Zamai
 #ifndef parsleyLib_hpp
 #define parsleyLib_hpp
 
@@ -7,6 +9,18 @@
 
 
 namespace parsleyLib{
+
+
+/**
+ Process a single image.
+ Loads the image at the specified path, applies Gamma Correction, Image Segmentation and Feature Extraction and saves each step image in a .tiff image in the output path. Prints to console detected objects list as pair (pixelColumn, pixelRow).
+ 
+ @param inputImgPath input image path
+ @param outputImgPath output path to save all images for each step
+ 
+ */
+void processImage(std::string inputImgPath, std::string outputImgPath);
+
 
 /**
  Computes the passed image histogram and saves the ready to display data in the other image passed.
@@ -130,9 +144,6 @@ bool isRect(cv::RotatedRect r);
  @param rotRectangles the vector of all the rectangles to draw
  */
 void drawRotatedBoundingBoxes(cv::Mat& imgToDraw, const std::vector<cv::RotatedRect>& rotRectangles);
-
-
-double totalPixels(const std::vector<cv::RotatedRect>& rotRects);
 
 }
 #endif /* parsleyLib_hpp */
