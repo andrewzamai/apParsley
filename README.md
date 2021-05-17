@@ -1,2 +1,5 @@
-# apParsley
-A software for impurity detection in parsley leaves
+# APParsley
+APParsley: un sistema di visione artificiale per l'individuazione di impurità tra foglie di prezzemolo essiccate
+
+
+
